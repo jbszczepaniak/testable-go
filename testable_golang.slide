@@ -1,0 +1,90 @@
+Testable code in Go
+25 April 2018
+
+Jędrzej Szczepaniak
+
+: Hello - I prepared a presentation about testable go code
+: The goal of the presentation is to show mechanisms with which go is testable at all
+: There will be no test cases in go. The knowledge in slides is applicable independtently from testing framework.
+
+
+* Python - freedom in mocking in tests
+    1  from unittest import mock
+    2  import requests
+    3
+    4  def get_page(url):
+    5      return requests.get(url)
+    6
+    7  def crawl(*urls):
+    8      for url in urls:
+    9          get_page(url)
+    10
+    11 @mock.patch('__main__.get_page', return_value="whatever")
+    12 def test_crawl_calls_get_page(get_page_mock):
+    13      crawl(
+    14          'http://www.privacy.matters.com',
+    15          'http://www.facebook.com',
+    16      )
+    17      assert get_page_mock.call_count == 2
+    18
+    19  if __name__ == "__main__":
+    20      test_crawl_calls_get_page()
+: In Python no matter how we will write code - it will be probably easy to mock.
+
+: For example crawl()[7] gets list of urls and for each of them it calls get_page()[4]
+: In unit test, instead of http call we want to make sure that get_page() was called
+: We can use patch[11], so instead of get_page[4] we can please mock.
+: Then in test we just check how many times get_page was called[17]
+
+
+* Go doesn't give developers so much freedom
+
+.play -numbers -edit mock.go /START OMIT/,/END OMIT/
+
+One cannot simply assign function name to other function.
+
+: This is almost equivalent of python code but rewritten in Go.
+: When we run the code, http request is sent.
+: After uncommenting [20] program mill crash.
+
+* But we can cheat a little
+this however requires that there is additional variable for each function we call.
+.play -numbers -edit mock2.go /START OMIT/,/END OMIT/
+
+- I would say that this is last resort technique
+- But there are usages of this even instandard library (https://golang.org/src/net/hook.go)
+
+: We assign function name getPage to getPageWrapper on the file level [14]
+: In the crawl method, instead of calling getPage, we call getPageWrapper
+: Thanks to this we can assign to getPageWrapper a function with identical signature as getPage
+: Here it is done in main but easily we could do it in test
+
+* Great friends of testable Go are interfaces!
+.image gopher_party.png
+
+* When function takes as the argument an interface, one can easily change implementation to test one
+.play -numbers interface1.go /START OMIT/,/END OMIT/
+
+: SomeInterface[7] has one method, to implement this interface we have only implement someFunc[8] on a struct.
+: We have two implementations of an interface. On a Impl[10] and on a FakeImpl[14] (because both implement someFunc)
+: doStuff [18] as an argument takes a variable which implements an SomeInterface
+: That means that in production code we can give real implementation, and in the test we can mock it.
+
+* Embedding interfaces in structs
+.code -numbers interface2.go /START OMIT/,/END OMIT/
+We give assurance to the compiler that `SomeStruct` will implement all methods from `InterfaceA` and `InterfaceB`.
+
+: In earlier examples we showed how to provide fake implementations in single functions. Now we want to change implementations inside single struct.
+: Let's assume that Run() calls A() and B() and when testing Run() we want to just check whether A() and B() will be called - thus we want to provide fake implementations for A() and B().
+: InterfaceToImplement has 3 methods: explicitly Run() and implicitly A() and B(). So in order to implement InterfaceToImplement we have to implement theese 3: Run(), A() and B().
+: In definition of SomeStruct, we embed InterfaceA and InterfaceB, which says to comiler that this struct implements methods for sure.
+
+* Embedding interfaces in structs 2
+.code -numbers interface2.go /START2 OMIT/,/END2 OMIT/
+We implement all the methods from interface `InterfaceToImplement`
+
+* Embedding interfaces in structs 3
+.play -numbers interface2.go /START3 OMIT/,/END3 OMIT/
+
+- We write additional implementation for InterfaceA and put it in "parent structure".
+- Now we can easily test reactions between methods by providing mocks inside single struct.
